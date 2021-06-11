@@ -105,6 +105,12 @@ def get_qoute(ticker='BTCEUR', add_differences=False, binance=False, drop_column
     return mod_qoutes if len(mod_qoutes) > 1 else mod_qoutes[0]
 
 
+def get_financial_ratios(ticker, api_key='f09ef0f6985bef8f53ad5f0ed68dc30c'):
+    url =  f"https://financialmodelingprep.com/api/v3/ratios-ttm/{ticker}?apikey={api_key}"
+    response = requests.get(url)
+    return response.json()[0]
+
+   
 def get_statement_json(ticker, limit=120, period='yearly', statement_type='income-statement', api_key='f09ef0f6985bef8f53ad5f0ed68dc30c'):
     url = f'https://financialmodelingprep.com/api/v3/{statement_type}/{ticker}?limit={limit}&apikey={api_key}&period={period}'
     response = requests.get(url)

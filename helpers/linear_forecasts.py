@@ -35,7 +35,8 @@ def find_linear_forcast(
         yaxis='values',
         title='',
         plot=False,
-        reverse=False
+        reverse=False,
+        forecast=False
     ):
     
     if reverse:
@@ -70,13 +71,17 @@ def find_linear_forcast(
         pyplot.title(title)
         pyplot.show()
 	
-    forcast_value = int(preds[-1])
-    if int(values[-1]) == 0:
-        forcast_growth = None
-    else:
-        forcast_growth = round((forcast_value - values[-1])/values[-1], 4)
+    if forecast:
+        forcast_value = int(preds[-1])
+        if int(values[-1]) == 0:
+            forcast_growth = None
+        else:
+            forcast_growth = round((forcast_value - values[-1])/values[-1], 4)
 	
-    return forcast_value, forcast_growth, b
+        return forcast_value, forcast_growth, b
+
+    else:
+        return b
 	
 
 def add_linear_forecast_params(
@@ -91,13 +96,17 @@ def add_linear_forecast_params(
         Add linear regression forcast & weights for variable 'varname' to results dictionary
     """
     #print(varname)
-    forcast, forcast_change, weights = find_linear_forcast(input_data, title=varname, plot=plot, reverse=reverse)
-    #results['pred_change_'+varname] = forcast_change
-    results['w0_'+varname] = weights[0]
-    results['w1_'+varname] = weights[1]	
+    weights = find_linear_forcast(
+        input_data, title=varname, plot=plot, reverse=reverse, forecast=add_forecast
+    )
 
     if add_forecast:
-        results['forcast_'+varname] = forcast if forcast else 0	
+        forcast_value, forcast_growth, weights = weights
+        results['forcast_'+varname] = forcast_value
+        results['pred_change_'+varname] = forcast_growth
+
+    results['w0_'+varname] = weights[0]
+    results['w1_'+varname] = weights[1]	
     
     return results
 

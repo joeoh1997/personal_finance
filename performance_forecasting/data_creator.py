@@ -8,7 +8,6 @@ import torch
 import random
 import os
 import pickle
-from matplotlib.pyplot import axis 
 
 import pandas as pd
 import numpy as np
@@ -155,10 +154,10 @@ def save_sequences_to_disk(
             print(f'Error while reading path:{statement_path}. Error msg: {e}')
 
     print(f"Max years observed = {max_years_observed}")
-    # [
-    #     pickle.dump(dataset, open(f"{data_path}{pkl_path}_{set_name}.pkl", 'wb')) 
-    #         for set_name, dataset in {'train': train, 'test': test}.items()
-    # ]
+    [
+        pickle.dump(dataset, open(f"{data_path}{pkl_path}_{set_name}.pkl", 'wb')) 
+            for set_name, dataset in {'train': train, 'test': test}.items()
+    ]
 
     
 
@@ -183,23 +182,56 @@ def create_next_year_target(statement_df, next_year_index, ticker):
     return pd.concat([label_statement_df, year_change_statement])
 
 
-def create_this_year_model_data(statement_df, next_year_index, ticker):
-    model_data = {'ticker': get_key(ticker, next_year_index)}
-    this_year_data = statement_df[:next_year_index]
+def create_linear_model_data(
+    statement_df,
+    last_index=None, 
+    ticker='', 
+    add_forecast=False, 
+    plot=False
+):
+
+    """
+    Description:
+        creates linear models for each var in the statement & 
+        groups their params to a dictionary.
+
+    """
+    model_data = {
+        'ticker': get_key(ticker, last_index) if last_index else ticker
+    }
+    statement_df = statement_df[:last_index] if last_index else statement_df
 
     for column in statement_df.columns:
         model_data = add_linear_forecast_params(
-            this_year_data[column].values,
+            statement_df[column].values,
             model_data,
             column,
-            add_forecast=True,
-            plot=True
+            add_forecast=add_forecast,
+            plot=plot
         )
 
     return model_data
 
 
-def make_linear_model_datset(data_path, min_statements, selected_variables, save_folder='aggregation'):
+def make_linear_model_datset(
+        data_path,
+        min_statements, 
+        selected_variables, 
+        save_folder='aggregation'
+    ):
+    """
+    Description:
+        Reads financial statements from data path & creates linear models for each var (e.g. revenue).
+        Adds linear model parameters for all companies (statements) & for all vars to a dataset.
+        This dataset may be used to predict future values for these vars.
+
+        The last statement entry is used as the target/label & all other entries are used
+        to make the linear models.
+
+        e.g. knowing the slope (change direction) of a companies revenue may be used to
+             predict that revenue in the future.
+
+    """
     dataset = pd.DataFrame()
     targets = pd.DataFrame()
 
@@ -213,7 +245,7 @@ def make_linear_model_datset(data_path, min_statements, selected_variables, save
         while end_index < len(statement_df):
 
             dataset = dataset.append(
-                create_this_year_model_data(statement_df, end_index, ticker),
+                create_linear_model_data(statement_df, end_index, ticker),
                 ignore_index=True
             )  # get statements up to simulated 'this' year
 
