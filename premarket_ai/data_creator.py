@@ -49,6 +49,7 @@ def open_website_capture_screnshot(
     return screenshot
     
     
+    
 def get_premarket_movers_data_and_images(
         num_movers=12,
         data_filename='data/premarket_movers/premarket_mover_info.csv',
@@ -82,8 +83,11 @@ def get_premarket_movers_data_and_images(
     todays_date = date.today()
     todays_date_str = todays_date.strftime("%d_%m_%Y")
     
+    print('Before modeling: ', list(movers.keys()))
+    
     # get linear model statement growth
     for ticker in list(movers.keys()):
+        
         try:
             weights = get_linear_model_data_from_statement(
                 ticker,
@@ -95,11 +99,31 @@ def get_premarket_movers_data_and_images(
             if weights:
                 data_dict[ticker] = weights
             
-        except:
-            print('Error adding linear models for {}...'.format(ticker))
+        except Exception as e:
+            print('Error adding linear models for {}, Error message: {}'.format(
+                ticker, str(e)
+            ))
             
     # get tickers which we have statement data for
     tickers = list(data_dict.keys())
+    
+    print('after modeling: ', tickers, "\n")
+    
+    # quote doesnt include premarket price
+    for qoute in get_qoute(tickers,
+                           add_differences=True,
+                           drop_columns=quote_drop_columns):
+        
+        growth_data =  financial_model_prep_growth(qoute['symbol'])
+        
+        if growth_data:
+            data_dict[qoute['symbol']] = {
+                **data_dict[qoute['symbol']],
+                **qoute,
+                **financial_model_prep_growth(qoute['symbol'])[0]
+            }
+        else:
+            tickers.remove(qoute['symbol'])
     
     # get chart screenshots
     for ticker in tickers+['SPY', 'NQ00']:
@@ -126,18 +150,6 @@ def get_premarket_movers_data_and_images(
             )
         
         
-    # quote doesnt include premarket price
-    for qoute in get_qoute(tickers,
-                           add_differences=True,
-                           drop_columns=quote_drop_columns):
-        
-        data_dict[qoute['symbol']] = {
-            **data_dict[qoute['symbol']],
-            **qoute,
-            **financial_model_prep_growth(qoute['symbol'])[0]
-        }
-        
-        
     data_df = pd.DataFrame(data_dict).transpose()
     data_df['growth_calculation_date'] = data_df['date']
     data_df['date'] = [todays_date]*len(data_df)
@@ -148,7 +160,7 @@ def get_premarket_movers_data_and_images(
     ], axis=1)
     
     if os.path.isfile(data_filename):
-        previous_data = pd.read_csv(data_filename, index_col=False).append(
+        pd.read_csv(data_filename, index_col=False).append(
               data_df
         ).to_csv(data_filename, index=False)
         
@@ -161,8 +173,8 @@ def get_premarket_movers_data_and_images(
 def get_premarket_movers_data_and_images_timed(
         num_movers=12,
         trigger_hour=14,
-        trigger_min=26,#16,#28,
-        trigger_sec=30,#0,
+        trigger_min=26,
+        trigger_sec=30,
         market_open_folder='data/premarket_movers/market_open_data/'
     ):
     
