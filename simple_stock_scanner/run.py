@@ -9,13 +9,13 @@ Created on Wed Jun  9 18:05:16 2021
 from performance_forecasting.data_creator import download_statement_data_for_exchanges
 from simple_stock_scanner.scanner import create_linear_models_from_statements, save_financial_ratios, save_merged_ratio_and_model_data
 
-period = 'yearly'
+period = 'year'
 min_statements = 5
 max_years=30
 
 download_statements = False
 save_linear_models = False
-save_ratios = False
+save_ratios = True
 
 exchanges = ['EURONEXT' ,'NYSE', 'NASDAQ', 'LSE']
 

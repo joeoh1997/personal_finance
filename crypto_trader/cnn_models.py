@@ -65,12 +65,11 @@ class CustomCommonLayersCNN(nn.Module):
         num_data_points = num_numerical_inputs + \
             (curr_img_size[0] * curr_img_size[1] * int(scale*18))
             
-        self.fully_connected_0 = nn.Linear(76, 30)
-        self.fully_connected_1 = nn.Linear(30, num_outputs)
+        self.fully_connected_0 = nn.Linear(76, 200)
+        self.fully_connected_1 = nn.Linear(200, num_outputs)
         
         self.prelu_fc_0 = nn.PReLU()
-        self.prelu_fc_1 = nn.PReLU()
-        #self.fully_connected_1 = nn.Linear(5, num_outputs)  
+        self.prelu_fc_1 = nn.PReLU() 
     
         
     def forward(
@@ -80,55 +79,39 @@ class CustomCommonLayersCNN(nn.Module):
             activation_function,
             disp=False,
             disp_image_for_validation=False,
-            return_extras=False
+            return_extras=False,
+            include_5_min=False
         ):
-        # visit nn.functional, elu, relu, gelu, prelu(need a weight), softplus, tanh, sigmoid
 
-        img_0 = torch.unsqueeze(input_image[:, 0, :, :], dim=1)
-        img_1 = torch.unsqueeze(input_image[:, 1, :, :], dim=1)
-        #out = None
-        #print(input_image.shape, img_0.shape, img_1.shape)
+        imgs = torch.unsqueeze(input_image[:, 0, :, :], dim=1)
+        imgs_5_min = torch.unsqueeze(input_image[:, 1, :, :], dim=1)
+
         batch_size = img_0.shape[0]
-        stacked = torch.cat([img_0, img_1], dim=0)
-        #print(stacked.shape)
-        # for img in [img_0, img_1]:
-            #!print(img.shape)
+
+        if include_5_min:
+            imgs = torch.cat([imgs, imgs_5_min], dim=0)
+
         out_0 = activation_function(self.conv_0(
-            stacked.type(torch.cuda.FloatTensor)
+            imgs.type(torch.cuda.FloatTensor)
         ))
-        #!print(out_0.shape)
+
         out_1 = activation_function(self.conv_1(out_0))
-        #!print(out_1.shape)
         out_2 = activation_function(self.conv_2(out_1))
-        #!print(out_2.shape)
         out_3 = activation_function(self.conv_3(out_2))
-        #!print(out_3.shape)
         out_4 = activation_function(self.conv_4(out_3))
-        #!print(out_4.shape)
+
+        if include_5_min:
+            out_4 = out_4[:batch_size] + out_4[batch_size:]
         
-            # out = out_4 if out is None else out_4 + out
-        # # balance norm        
-        # numeric_input[:, -3:-1] = numeric_input[:, -3:-1]/1000
-        #!print(out.shape)
-        #print(out_4.shape)
-        #out_4_unstacked = torch.cat([out_4[:batch_size], out_4[batch_size:]], dim=1)
-        #print( out_4[:batch_size].shape, out_4[batch_size:].shape)
-        out_4_unstacked = out_4[:batch_size] + out_4[batch_size:]
-        #print(out_4_unstacked.shape)
         union = torch.cat([
-            torch.flatten(out_4_unstacked, 1, -1), 
+            torch.flatten(out_4, 1, -1), 
             numeric_input,
         ], dim=1)
-        
-        #print(union.shape)
-        
 
-        out_5 = self.prelu_fc_0(self.fully_connected_0(union)) # activation_function
-        #!print(out_5.shape)
+        out_5 = self.prelu_fc_0(self.fully_connected_0(union))
         out_6 = self.prelu_fc_1(self.fully_connected_1(
             out_5
-        )) # None
-        #!print(out_6.shape)
+        ))
 
         if disp:
             print('Starting Forward Pass..')
@@ -145,13 +128,7 @@ class CustomCommonLayersCNN(nn.Module):
             cv2.waitKey(1000)
             cv2.destroyAllWindows() 
         
-        #!print(out_6.shape, "\n\n\n")
-        # if random.random() <= 0.0001:
-        #      print(out_6[0])
-        #print(self.fully_connected_0.weight.shape, torch.sum(self.fully_connected_0.weight, dim=0).shape)
-        
         if return_extras:
-            #print(torch.sum(self.fully_connected_0.weight, dim=0).shape, union.flatten().shape)
             return out_6, torch.sum(self.fully_connected_0.weight, dim=0), union.flatten()
         
         return out_6

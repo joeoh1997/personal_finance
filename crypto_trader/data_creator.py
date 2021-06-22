@@ -5,6 +5,7 @@ Created on Sun Mar 21 12:16:46 2021
 @author: Joe
 """
 import datetime
+import queue
 import time
 
 import cv2
@@ -208,59 +209,122 @@ def create_episode_data(num_hours_to_record,
     np.save(file_name_prefix+'_images_{}_hours.npy'.format(process_hours_total), image_array)
     np.save(file_name_prefix+'_quotes_{}_hours.npy'.format(process_hours_total), quote_data)
     print('Save time: ', time.time() - t)
-    
 
 
-# def stacked_test_plot()
+def create_numeric_episode_data(
+    num_hours_to_record,
+    file_name_prefix='data/streams/BTC_episode_data',
+    cryptos='XRPEUR',
+    binance=True,
+    sleep_time=25
+):
+    data = pd.DataFrame()
+    num_captures = int(num_hours_to_record*3600/sleep_time)
+    start_date_time = datetime.datetime.now().strftime("%m_%d_%Y__%H_%M")
+
+    print(f"Performing {num_captures} captures over {num_hours_to_record} hours")
+
+    cur_sleep_time = 1
+    thread_queue = queue.Queue()
+
+    # get quote every n seconds
+    for i in range(num_captures):
+        start_time = time.time()
+        
+        if cur_sleep_time == 0:
+            print("Time exceeded on last iteration.")
+
+        quote = get_qoute(
+            cryptos,
+            binance=binance,
+            drop_columns=True,
+            thread_queue=thread_queue
+        )
+
+        if len(cryptos) > 0:
+            quote_ = {}
+
+            for j in range(len(cryptos)):
+                label = quote[j]['ticker'][:3]+"_"
+                quote_ = {
+                    **quote_,
+                    **{
+                        label+key: value
+                        for key, value in quote[j].items() if key != 'ticker'
+                    }
+                }
+
+            quote = quote_
+
+        quote['timestamp'] = datetime.datetime.now().strftime("%m:%d:%Y %H:%M:%S")
+        data = data.append(quote, ignore_index=True)
+
+        if i % 100 == 0: #500:
+            print(f"Capture {i} of {num_captures}, Saving data to disk.")
+            data.to_csv(file_name_prefix+start_date_time+".csv") # started og one at 9pm
+
+        cur_sleep_time = max(0, sleep_time - (time.time() - start_time))
+        time.sleep(cur_sleep_time)
 
 
 if __name__ == "__main__":
     
     
     path_prefix = '' #'D:/'
-    file_name_prefix = path_prefix + 'data/streams/XRPEUR/gui_episode_data'
+    file_name_prefix = path_prefix + 'data/streams/XRPEUR/numeric/12_second_interval_'   #gui_episode_data'
     load = False
     
-    
-    if load:    
-        hours = '10_27'
-        date = "05_04_2021"
-            
-        images_array = np.load(
-            file_name_prefix+'_{}_images_{}_hours.npy'.format(date, hours)
-        )
-        
-        # quotes_array = np.load(
-        #     file_name_prefix+'_{}_quotes_{}_hours.npy'.format(date, hours)
-        # )        
-        
+    numeric_only = True
 
-        for i in range(0, images_array.shape[0], 1):
-            cv2.imshow('', np.concatenate([images_array[i, :, :, 0],
-                                            images_array[i, :, :, 1]], axis=0))
-            cv2.waitKey(1500)
-            cv2.destroyAllWindows() 
+    if numeric_only:
+        create_numeric_episode_data(
+            num_hours_to_record=800,
+            file_name_prefix=file_name_prefix,
+            cryptos=['XRPEUR', 'BTCEUR'],
+            binance=True,
+            sleep_time=12
+        )
+    else:
+    
+        if load:    
+            hours = '10_27'
+            date = "05_04_2021"
+                
+            images_array = np.load(
+                file_name_prefix+'_{}_images_{}_hours.npy'.format(date, hours)
+            )
             
-        # np.save(
-        #     file_name_prefix+'_{}_images_{}_hours_mod.npy'.format(date, hours),
-        #     images_array[:97286]
-        # )
-        # np.save(
-        #     file_name_prefix+'_{}_quotes_{}_hours_mod.npy'.format(date, hours),
-        #     quotes_array[:97286]
-        # )
-    
-    
-    create_episode_data(
-        num_hours_to_record=12,
-        x_indent=60,
-        downsize_fraction=0.4,
-        grayscale=True,
-        file_name_prefix=file_name_prefix,
-        cryptos='XRPEUR',
-        use_d3dshot=False,
-        binance=True
-    )    
+            # quotes_array = np.load(
+            #     file_name_prefix+'_{}_quotes_{}_hours.npy'.format(date, hours)
+            # )        
+            
+
+            for i in range(0, images_array.shape[0], 1):
+                cv2.imshow('', np.concatenate([images_array[i, :, :, 0],
+                                                images_array[i, :, :, 1]], axis=0))
+                cv2.waitKey(1500)
+                cv2.destroyAllWindows() 
+                
+            # np.save(
+            #     file_name_prefix+'_{}_images_{}_hours_mod.npy'.format(date, hours),
+            #     images_array[:97286]
+            # )
+            # np.save(
+            #     file_name_prefix+'_{}_quotes_{}_hours_mod.npy'.format(date, hours),
+            #     quotes_array[:97286]
+            # )
+        
+        
+        create_episode_data(
+            num_hours_to_record=12,
+            x_indent=60,
+            downsize_fraction=0.4,
+            grayscale=True,
+            file_name_prefix=file_name_prefix,
+            cryptos='XRPEUR',
+            use_d3dshot=False,
+            binance=True
+        )    
     
     
     
