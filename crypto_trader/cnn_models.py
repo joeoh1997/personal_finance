@@ -115,6 +115,7 @@ class CustomCommonLayersCNN(nn.Module):
         #print( out_4[:batch_size].shape, out_4[batch_size:].shape)
         out_4_unstacked = out_4[:batch_size] + out_4[batch_size:]
         #print(out_4_unstacked.shape)
+        
         union = torch.cat([
             torch.flatten(out_4_unstacked, 1, -1), 
             numeric_input,

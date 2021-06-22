@@ -23,7 +23,7 @@ def request_html_as_mozilla(url):
     return webpage.decode("utf-8")
 
 
-def financial_model_prep_growth(ticker, limit=1, period='year', api_key='f09ef0f6985bef8f53ad5f0ed68dc30c'):
+def financial_model_prep_growth(ticker, limit=1, period='yearly', api_key='f09ef0f6985bef8f53ad5f0ed68dc30c'):
     return request(
         f"https://financialmodelingprep.com/api/v3/financial-growth/{ticker}?limit={limit}&period={period}&apikey={api_key}"
     )

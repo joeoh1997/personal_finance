@@ -187,6 +187,8 @@ class DeepQLeaning(UnsupervisedLearning):
         sim_prices,
         step_dict
     ):
+        step_dict['current_step'] = current_step
+
         state = self.prepare_state(
             [sim_numeric_data[current_step], sim_image_data[current_step]],
             step_dict # (current_step-last_buy_step)/10000 #if last_buy_step > 0 else 0
@@ -227,6 +229,7 @@ class DeepQLeaning(UnsupervisedLearning):
 
         if action_selected_by_network == 0:
             step_dict['last_buy_atempt_step'] = current_step
+
         elif action_selected_by_network == 1:
             step_dict['last_sell_attempt_step'] = current_step
         
@@ -245,12 +248,7 @@ class DeepQLeaning(UnsupervisedLearning):
             step_dict #(current_step-last_buy_step)/10000 #if last_buy_step > 0 else 0
         )
         
-        self.delayed_state_adder.add_or_delay_state(
-            current_step,
-            (state, action, next_state, reward),
-            self.memory
-        )
-        
+        return (state, action, next_state, reward), 
 
     def training_loop(
             self,
@@ -285,11 +283,9 @@ class DeepQLeaning(UnsupervisedLearning):
                 
                 self.balance = copy.deepcopy(episode_start_balance)
 
-                total_loss, last_buy_step, skip_next = 0, 0, False
-                last_buy_atempt_step, last_sell_attempt_step = 0, 0
+                total_loss, skip_next = 0, False
 
                 step_dict = {
-                    #'last_buy_step': 0,
                     'last_buy_atempt_step': 0,
                     'last_sell_attempt_step': 0,
                     'current_step': 0,
@@ -308,74 +304,22 @@ class DeepQLeaning(UnsupervisedLearning):
                 sim_action_rewards = pd.DataFrame()
                 
                 for current_step in range(max_step):
-                    step_dict['current_step'] = current_step
 
                     # add transaction delay
                     if skip_next:
                         skip_next = False
                     else: 
-                        state = self.prepare_state(
-                            [sim_numeric_data[current_step], sim_image_data[current_step]],
-                            step_dict # (current_step-last_buy_step)/10000 #if last_buy_step > 0 else 0
-                        )
-
-                        current_price, next_price = sim_prices[current_step], sim_prices[current_step+1]
-                        
-                        # Get NN to select next action
-                        action, selected_by_network, cur_weights, fc_input = \
-                            self.get_action(state, epsilon=epsilon, r=random_settings.r)
-                        
-                        # perform action in sim env & get actual reward
-                        self.balance, skip_next, reward, base_balance_at_last_buy, performed_action = \
-                            simulated_bot_action_deterministic(
-                                self.balance,
-                                step_dict,
-                                action,
-                                next_price, # fed into neural net - part of state
-                                self.ticker,
-                                base_balance_at_last_buy,
-                                buy_rewards[current_step]
-                                #should_do_nothing_reward=-0.1
-                            )
-                            
-                        q, action_selected_by_network = torch.max(action, dim=1)
-                        sim_action_rewards = sim_action_rewards.append({
-                            "action": performed_action,
-                            "action_selected_by_network": action_selected_by_network,
-                            "selected_by_network": selected_by_network,
-                            "selected_pred_future_rewards": q[0].item(),
-                            "pred_future_rewards":action,
-                            "reward": reward,
-                            "step_buy_reward": buy_rewards[current_step],
-                            "weightedAvgPrice": weightedAvgPrice[current_step],
-                            "current_price": current_price,
-                            "cur_weights": cur_weights,
-                            "fc_input": fc_input,
-                        }, ignore_index=True)
-
-                        if action_selected_by_network == 0:
-                            step_dict['last_buy_atempt_step'] = current_step
-                        elif action_selected_by_network == 1:
-                            step_dict['last_sell_attempt_step'] = current_step
-                        
-                        # convert reward to tensor
-                        reward = torch.tensor([reward], device=self.device)
-                        
-                        base_balance = get_base_balance(self.balance, next_price, self.ticker)
-
-                        if base_balance < self.terminating_balance:
-                            print('\t\t Exceeded min balance...')
-                            break
-                        
-                        next_state = self.prepare_state(
-                            [sim_numeric_data[current_step + next_step_offset],
-                             sim_image_data[current_step + next_step_offset]],
-                            step_dict #(current_step-last_buy_step)/10000 #if last_buy_step > 0 else 0
+                        state_tuple = self.perf_sim_step(
+                            current_step,
+                            sim_numeric_data,
+                            sim_image_data,
+                            sim_prices,
+                            step_dict
                         )
                         
                         self.delayed_state_adder.add_or_delay_state(
                             current_step,
-                            (state, action, next_state, reward),
+                            state_tuple,
                             self.memory
                         )
                         
@@ -394,10 +338,7 @@ class DeepQLeaning(UnsupervisedLearning):
                                         action[0], self.memory.stored_ratio
                                     )
                                 )  
-                                
-                        del state
-                        del next_state
-                        
+
                 sim_action_rewards.to_csv('sim_action_rewards.csv', index=False)
 
                 self.episode_durations.append(current_step)
@@ -408,9 +349,6 @@ class DeepQLeaning(UnsupervisedLearning):
                         sim_index, episode_start_balance, self.balance, current_step, sim_numeric_data.shape[0]
                     )
                 )
-                del sim_numeric_data
-                del sim_image_data
-                del sim_prices
                 
                 #self.pretraining(num_epochs=1, epoch_length=250, evaluate=False)
                 sim_num += 1
@@ -427,12 +365,6 @@ class DeepQLeaning(UnsupervisedLearning):
         
         i_episode, epsilon = 0, 1 # all random
         episode_start_balance = {'EUR': 1000, 'XRP': 0}
-        step_dict = {
-            #'last_buy_step': 0,
-            'last_buy_atempt_step': 0,
-            'last_sell_attempt_step': 0,
-            'current_step': 0
-        }
         
         while True:
                         
@@ -445,10 +377,17 @@ class DeepQLeaning(UnsupervisedLearning):
                 
                 sim_numeric_data, sim_image_data, buy_rewards, sim_prices, weightedAvgPrice = \
                     prep_sim_data(sim_index, self.stream_dates, self.stream_times, self.data_path)
-
+                            
                 max_step = sim_numeric_data.shape[0]-next_step_offset
                 
                 for seq_index in range(num_sequential_sim_runs):
+
+                    step_dict = {
+                        'last_buy_atempt_step': 0,
+                        'last_sell_attempt_step': 0,
+                        'current_step': 0,
+                        'base_balance_at_last_buy': self.balance['EUR']
+                    }
                     
                     self.balance = copy.deepcopy(episode_start_balance)
                     base_balance_at_last_buy = self.balance['EUR']
@@ -465,76 +404,25 @@ class DeepQLeaning(UnsupervisedLearning):
                         if skip_next:
                             skip_next = False
                         else:
-                            state = self.prepare_state(
-                                [sim_numeric_data[current_step], sim_image_data[current_step]],
-                                (current_step-last_buy_step)/10000 if last_buy_step > 0 else 0
-                                )
-                            
-                            next_price = sim_prices[current_step+1]
-    
-                            
-                            # Get NN to select next action
-                            action, selected_by_network = self.get_action(state, epsilon=epsilon, r=r)
-                            
-                            # perform action in sim env & get actual reward
-                            self.balance, skip_next, reward, base_balance_at_last_buy, performed_action = \
-                                simulated_bot_action_deterministic(
-                                    self.balance,
-                                    action,
-                                    next_price, # fed into neural net - part of state
-                                    self.ticker,
-                                    base_balance_at_last_buy,
-                                    buy_rewards[current_step],
-                                    #should_do_nothing_reward=-1
-                                )
-                                
-                                
-                            if performed_action == 0:
-                                last_buy_step = current_step
-                                
-                            elif performed_action == 1:
-                                last_buy_step = -1
-                            
-                            # convert reward to tensor
-                            reward = torch.tensor([reward], device=self.device)
-                            
-                            base_balance = get_base_balance(self.balance, next_price, self.ticker)
-    
-                            if base_balance < self.terminating_balance:
-                                print('\t\t Exceeded min balance...')
-                                break
-                                
-                            next_state = self.prepare_state(
-                                [sim_numeric_data[current_step + next_step_offset],
-                                 sim_image_data[current_step + next_step_offset]],
-                                (current_step-last_buy_step)/10000 if last_buy_step > 0 else 0
+                            state_tuple = self.perf_sim_step(
+                                current_step,
+                                sim_numeric_data,
+                                sim_image_data,
+                                sim_prices,
+                                step_dict
                             )
                             
-                            if not only_non_zero:
-                                if random.random() <= 0.001: # add on avg every 1000th entry
+                            if :
+                                if ((not only_non_zero and random.random() <= 0.001) or
+                                    (only_non_zero and float(reward) != 0.0)):
+                                     
+                                    # add on avg every 1000th entry
                                     self.memory.push(
                                         (state, action, next_state, reward),
                                         saving=True,
                                         save_prefix=self.play_path
                                     )
                                     print('\t\t Reward:',reward, 'MemSize:',len(self.memory.memory))
-                                    
-                                if current_step % 10000 == 0:
-                                    print(
-                                        '\t\t Step={}, Balance={}'.format(
-                                            current_step, self.balance
-                                        )
-                                    ) 
-                                    
-                            else:
-                                if float(reward) != 0.0:
-                                    self.memory.push(
-                                        (state, action, next_state, reward),
-                                        saving=True,
-                                        save_prefix=self.play_path+'non_zero_'
-                                    )
-                                    print('\t\t Reward:',reward, 'MemSize:',len(self.memory.memory))
-                                
                                     
                                 if current_step % 10000 == 0:
                                     print(
@@ -552,9 +440,6 @@ class DeepQLeaning(UnsupervisedLearning):
                         )
                     )
                     i_episode += 1
-                del sim_numeric_data
-                del sim_image_data
-                del sim_prices
                 
             
     def get_torch_state_batch(self, state_list, is_tensor=False):

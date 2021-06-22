@@ -305,8 +305,8 @@ def get_statement_data(
     """
         Gets income & cash flow statement data for given ticker
     """
-    if period not in ['quarterly', 'yearly']:
-        raise ValueError("period needs to be quarterly or yearly...")
+    if period not in ['quarter', 'year']:
+        raise ValueError("period needs to be quarter or year...")
     
     income_statements = get_statement_json(ticker, period=period)
     

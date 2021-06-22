@@ -160,11 +160,6 @@ def prep_sim_data(sim_index, stream_dates, stream_times, data_path):
           
     buy_rewards = weightedAvgPrice - sim_prices  # positive if buy price less than average price
     
-    # df = pd.DataFrame()
-    # df['price'] = sim_prices
-    # df['avg'] = weightedAvgPrice
-    # df['buy_rewards'] = buy_rewards
-    # df.to_csv('prep.csv')
     return sim_numeric_data, sim_image_data, buy_rewards, sim_prices, weightedAvgPrice
     
     
