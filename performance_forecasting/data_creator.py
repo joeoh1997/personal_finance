@@ -120,6 +120,7 @@ def save_sequences_to_disk(
     """
         Iterates through statements & creates multiple sequences from each tickers statements
     """
+    print(f"{data_path}{pkl_path}_test.pkl")
     train, test = [], []
     paths = os.listdir(data_path)
     num_tickers = len(paths)

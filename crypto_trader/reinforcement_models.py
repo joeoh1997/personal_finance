@@ -185,9 +185,15 @@ class DeepQLeaning(UnsupervisedLearning):
         sim_numeric_data,
         sim_image_data,
         sim_prices,
-        step_dict
+        buy_rewards,
+        step_dict,
+        random_settings,
+        epsilon,
+        next_step_offset=10,
+        sim_action_rewards=None
     ):
         step_dict['current_step'] = current_step
+        sim_finished = False 
 
         state = self.prepare_state(
             [sim_numeric_data[current_step], sim_image_data[current_step]],
@@ -211,21 +217,23 @@ class DeepQLeaning(UnsupervisedLearning):
                 buy_rewards[current_step]
                 #should_do_nothing_reward=-0.1
             )
-            
+        
         q, action_selected_by_network = torch.max(action, dim=1)
-        sim_action_rewards = sim_action_rewards.append({
-            "action": performed_action,
-            "action_selected_by_network": action_selected_by_network,
-            "selected_by_network": selected_by_network,
-            "selected_pred_future_rewards": q[0].item(),
-            "pred_future_rewards":action,
-            "reward": reward,
-            "step_buy_reward": buy_rewards[current_step],
-            "weightedAvgPrice": weightedAvgPrice[current_step],
-            "current_price": current_price,
-            "cur_weights": cur_weights,
-            "fc_input": fc_input,
-        }, ignore_index=True)
+        
+        if sim_action_rewards:
+            sim_action_rewards = sim_action_rewards.append({
+                "action": performed_action,
+                "action_selected_by_network": action_selected_by_network,
+                "selected_by_network": selected_by_network,
+                "selected_pred_future_rewards": q[0].item(),
+                "pred_future_rewards":action,
+                "reward": reward,
+                "step_buy_reward": buy_rewards[current_step],
+                "weightedAvgPrice": weightedAvgPrice[current_step],
+                "current_price": current_price,
+                "cur_weights": cur_weights,
+                "fc_input": fc_input,
+            }, ignore_index=True)
 
         if action_selected_by_network == 0:
             step_dict['last_buy_atempt_step'] = current_step
@@ -240,7 +248,7 @@ class DeepQLeaning(UnsupervisedLearning):
 
         if base_balance < self.terminating_balance:
             print('\t\t Exceeded min balance...')
-            break
+            sim_finished = True
         
         next_state = self.prepare_state(
             [sim_numeric_data[current_step + next_step_offset],
@@ -248,7 +256,7 @@ class DeepQLeaning(UnsupervisedLearning):
             step_dict #(current_step-last_buy_step)/10000 #if last_buy_step > 0 else 0
         )
         
-        return (state, action, next_state, reward), 
+        return (state, action, next_state, reward), sim_finished, reward, performed_action
 
     def training_loop(
             self,
@@ -309,12 +317,17 @@ class DeepQLeaning(UnsupervisedLearning):
                     if skip_next:
                         skip_next = False
                     else: 
-                        state_tuple = self.perf_sim_step(
+                        state_tuple, sim_finished, reward, _ = self.perf_sim_step(
                             current_step,
                             sim_numeric_data,
                             sim_image_data,
                             sim_prices,
-                            step_dict
+                            buy_rewards,
+                            step_dict,
+                            random_settings,
+            	            epsilon,
+                            next_step_offset,
+                            sim_action_rewards
                         )
                         
                         self.delayed_state_adder.add_or_delay_state(
@@ -339,6 +352,9 @@ class DeepQLeaning(UnsupervisedLearning):
                                     )
                                 )  
 
+                        if sim_finished:
+                            break
+
                 sim_action_rewards.to_csv('sim_action_rewards.csv', index=False)
 
                 self.episode_durations.append(current_step)
@@ -357,13 +373,14 @@ class DeepQLeaning(UnsupervisedLearning):
                 
     def create_pretraining_datasets(
             self,
+            random_settings,
             only_non_zero,
             num_sequential_sim_runs=5,
             label_date=None,
             next_step_offset=10
         ):
         
-        i_episode, epsilon = 0, 1 # all random
+        i_episode = 0
         episode_start_balance = {'EUR': 1000, 'XRP': 0}
         
         while True:
@@ -394,7 +411,9 @@ class DeepQLeaning(UnsupervisedLearning):
     
                     last_buy_step, skip_next = 0, False
                     
-                    r = 3000 if i_episode % 3 == 0 else 6000
+                    r = random.sample([1000, 3000, 3000, 6000], 1)[0] # 3000 if i_episode % 3 == 0 else 6000
+                    random_settings.r = r
+
                     print('Sim={}, seq_index={}, R={}, Episode {}'.format(
                         sim_index, seq_index, r, i_episode
                     ))
@@ -404,35 +423,43 @@ class DeepQLeaning(UnsupervisedLearning):
                         if skip_next:
                             skip_next = False
                         else:
-                            state_tuple = self.perf_sim_step(
+                            state_tuple, sim_finished, reward, performed_action = self.perf_sim_step(
                                 current_step,
                                 sim_numeric_data,
                                 sim_image_data,
                                 sim_prices,
-                                step_dict
-                            )
-                            
-                            if :
-                                if ((not only_non_zero and random.random() <= 0.001) or
-                                    (only_non_zero and float(reward) != 0.0)):
-                                     
-                                    # add on avg every 1000th entry
-                                    self.memory.push(
-                                        (state, action, next_state, reward),
-                                        saving=True,
-                                        save_prefix=self.play_path
-                                    )
-                                    print('\t\t Reward:',reward, 'MemSize:',len(self.memory.memory))
+                                buy_rewards,
+                                step_dict,
+                                random_settings,
+                                epsilon=1,
+                                next_step_offset=next_step_offset
+                            )                            
+
+                            if ((not only_non_zero and random.random() <= 0.001) or
+                                (only_non_zero and performed_action != 2)):
                                     
-                                if current_step % 10000 == 0:
-                                    print(
-                                        '\t\t Step={}, Balance={}'.format(
-                                            current_step, self.balance
-                                        )
-                                    ) 
+                                # add on avg every 1000th entry
+                                self.memory.push(
+                                    state_tuple,
+                                    saving=True,
+                                    save_prefix=self.play_path
+                                )
+                                print(
+                                    f"\t\t Reward: {reward}, MemSize: {len(self.memory.memory)}, "
+                                    f"Performed Action: {['buy', 'sell', 'do nothing'][performed_action]}"
+                                )
+                                
+                            if current_step % 10000 == 0:
+                                print(
+                                    '\t\t Step={}, Balance={}'.format(
+                                        current_step, self.balance
+                                    )
+                                ) 
      
-                            del state
-                            del next_state
+
+                            if sim_finished:
+                                break
+
 
                     print(
                         '\t\t Finishing sim {}. Start balance={},\n\t\t finishing balance={}\n\t\t final_step={}, max_step={}'.format(
@@ -660,6 +687,7 @@ class DeepQLeaning(UnsupervisedLearning):
                 dtype=torch.float
             ).unsqueeze(dim=0), False, None, None
         
+
     def get_large_reward_pretrain_data(self, large_limit=10):
         datasets = os.listdir(self.play_path)
         non_zero_datasets = [d for d in datasets if 'non_zero' in d ]
@@ -717,7 +745,7 @@ class DeepQLeaning(UnsupervisedLearning):
                     
             self.stored_ratio[torch.max(state_tuple[1], dim=1)[1]] += 1
             
-            if self.states_processed % self.capacity == 0:
+            if self.states_processed % self.capacity == 0 and not saving:
                 print('Adding large Reward States to memory..')
                 self.add_large_reward_states_to_memory()
 
@@ -828,42 +856,3 @@ class RandomnessSettings():
             epsilon = 0 # only allow random every nth epoch
             
         return epsilon
-        
-        
-if __name__ == '__main__':
-    next_step_offset = 10 
-    
-    #get_stream_data_sizes()s
-    deep_q_learner = DeepQLeaning(
-        100000,
-        data_path='D:/data/streams/XRPEUR/', #'E:/validation/', #'D:/data/streams/XRPEUR/', # #
-        play_path='data/streams/XRPEUR/random_play/',
-        create_torch_models=True
-    )
-    #deep_q_learner.pretraining() #training_loop(num_episodes=10000)
-    # deep_q_learner.create_pretraining_datasets(
-    #     only_non_zero=False,
-    #     num_sequential_sim_runs=2, #5
-    #     label_date=None,
-    #     next_step_offset=next_step_offset
-    # )
-    #deep_q_learner.get_large_reward_pretrain_data()
-
-    random_settings = RandomnessSettings(
-        random_every_nth_sim=2,
-        no_epsilon_after_n_sims=40,
-        start_epsilon=0.8,
-        constant_epsilon=None,
-        r=2500
-    )
-    
-    deep_q_learner.training_loop(
-        random_settings,
-        num_episodes=50,
-        sim_indexes=None,
-        optimize=True,
-        next_step_offset=10
-    )
-    
-    
-    

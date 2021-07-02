@@ -11,7 +11,15 @@ import torch.nn as nn
 #from torch import nn.utils.rnn.pad_packed_sequence as pad_packed_sequence
 
 class revenueForecastLSTM(nn.Module):
-    def __init__(self, num_features, num_outputs, layer_sizes, use_bn=True, use_rnn=False):
+    def __init__(
+        self, 
+        num_features, 
+        num_outputs, 
+        layer_sizes, 
+        use_bn=True, 
+        use_rnn=False,
+        dropout=0
+    ):
         super(revenueForecastLSTM, self).__init__()
 
         m = nn.RNN if use_rnn else nn.LSTM 
@@ -22,14 +30,14 @@ class revenueForecastLSTM(nn.Module):
             hidden_size=layer_sizes['lstm_hidden_size'],
             num_layers=layer_sizes['num_stacked_lstm_cells'],
             batch_first=True,  # if True input size = (batch, seq, feature) otherwise seq first
-            dropout=0,
+            dropout=dropout,
             bidirectional=False
         )
-        self.bn_0 = nn.BatchNorm1d(layer_sizes['lstm_hidden_size']*(1 if use_rnn else 2))
+        self.bn_0 = nn.BatchNorm1d(layer_sizes['lstm_hidden_size'])#*(1 if use_rnn else 2))
         self.prelu_fc_0 = nn.PReLU()
 
         self.fully_connected_0 = nn.Linear(
-            layer_sizes['lstm_hidden_size']*(1 if use_rnn else 2),
+            layer_sizes['lstm_hidden_size'], #*(1 if use_rnn else 2),
             layer_sizes['fc_hidden_size']
         )
         self.prelu_fc_1 = nn.PReLU()
@@ -66,7 +74,7 @@ class revenueForecastLSTM(nn.Module):
             self.lstm.bias_hh_l0[layer_sizes['lstm_hidden_size']:layer_sizes['lstm_hidden_size']*2]
         )
 
-    def forward(self, packed_sequences, init_hidden_state, init_output_state, activation=None):
+    def forward(self, packed_sequences, init_hidden_state, init_output_state, activations=None):
         """
             Just training on final output, only final output usedf for prediction
         """
@@ -79,15 +87,18 @@ class revenueForecastLSTM(nn.Module):
             sequence_outputs, (hidden_state, output_state) = self.lstm(
                 packed_sequences, (init_hidden_state, init_output_state)
             )
-            x = torch.cat([hidden_state, output_state], axis=-1)
+            x = hidden_state #torch.cat([hidden_state, output_state], axis=-1)
 
-        activation = activation if activation else self.prelu_fc_0
+        if activations is None:
+            activations = [None, None]
+
+        activation = activations[0] if activations[0] else self.prelu_fc_0
         x = activation(torch.swapdims(x, 0, 1).sum(dim=1))
 
         if self.use_bn:
             x = self.bn_0(x)
 
-        activation = activation if activation else self.prelu_fc_1
+        activation = activations[1] if activations[1] else self.prelu_fc_1
         x = activation(self.fully_connected_0(x))
 
         if self.use_bn:

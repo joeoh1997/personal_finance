@@ -5,6 +5,7 @@ Created on Sun May 23 11:22:43 2021
 @author: joeoh
 """
 import torch 
+import torch.nn.functional as functional
 
 from performance_forecasting.data_creator import download_statement_data_for_exchanges, save_sequences_to_disk
 from performance_forecasting.trainer import Trainer
@@ -18,7 +19,7 @@ selected_variables = [
 
 variables_to_forecast = ['revenue', 'freeCashFlow']
 
-period = 'yearly'
+period = 'year'
 min_statements = 4
 max_years=30
 
@@ -53,12 +54,14 @@ if train:
         variables_to_forecast,
         selected_variables,
         batch_size=45,
-        lr=0.0001,
+        lr=0.001,
         optim='asgd',
         loss_function='l2',
-        activation=None, #torch.nn.functional.tanhshrink,
+        activation=[functional.softsign, None], # torch.tanh, None
         use_bn=False,
-        use_rnn=False
+        use_rnn=False,
+        dropout=0.333,
+        weight_decay=0.0001
     )
 
     trainer.looper(load_model=False)
