@@ -48,20 +48,31 @@ if create_sequences:
         pkl_path=pkl_path
     )
 
+
+layer_sizes = {
+    'lstm_hidden_size': int(len(selected_variables)*2*1.5),
+    'fc_hidden_size': 2,
+    'num_stacked_lstm_cells': 6
+}
+
 if train:
     trainer = Trainer(
         data_path+pkl_path,
         variables_to_forecast,
         selected_variables,
-        batch_size=45,
+        layer_sizes,
+        weight_decays={
+            'lstm_dropout': 0,  #0.333
+            'fc_l2': 0.01,  # 0.001
+            'global_l2': 0.0001  # 0.0001
+        },
         lr=0.001,
+        batch_size=45, # update params
         optim='asgd',
         loss_function='l2',
-        activation=[functional.softsign, None], # torch.tanh, None
+        activation=[torch.tanh, None], # functional.softsign
         use_bn=False,
-        use_rnn=False,
-        dropout=0.333,
-        weight_decay=0.0001
+        use_rnn=False # network config
     )
 
     trainer.looper(load_model=False)

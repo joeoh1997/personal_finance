@@ -47,16 +47,14 @@ class Trainer:
         variables_to_forecast,
         selected_variables,
         layer_sizes,
+        weight_decays,
         lr=0.0001,
         batch_size=32,
         optim='adam_grad',
         loss_function='l1',
         activation=None,
         use_bn=True,
-        use_rnn=False,
-        dropout=0,
-        weight_decay=0,
-        
+        use_rnn=False
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.output_indexes = [selected_variables.index(var) for var in variables_to_forecast]
@@ -68,12 +66,32 @@ class Trainer:
             layer_sizes,
             use_bn=use_bn,
             use_rnn=use_rnn,
-            dropout=dropout
+            dropout=weight_decays['lstm_dropout']
         ).to(self.device)
 
+        global_params, fc_params = [], []
+
+        for mod_name, module in self.lstm.named_modules():
+            if mod_name == '':
+                pass
+
+            elif mod_name == 'lstm':
+                global_params.extend(module.parameters())
+
+            else:
+                for param in module.parameters():
+                    if len(param.shape) == 1:
+                        global_params.append(param)
+                    else:
+                        fc_params.append(param)
+
         self.optimizer = OPTIMIZERS[optim](
-            self.lstm.parameters(), lr=lr, weight_decay=weight_decay
+            [
+                {'params': global_params, 'weight_decay': weight_decays['global_l2']},
+                {'params': fc_params, 'weight_decay': weight_decays['fc_l2']}
+            ], lr=lr,
         )
+        #self.lstm.parameters()
         self.loss_function = LOSS_FUNCTIONS[loss_function]
 
         self.train = []
@@ -223,7 +241,7 @@ class Trainer:
         ax = fig.add_axes([0.1, 0.1, 0.5, 0.5])
         ax.plot(range(len(losses)), losses, label='train' if train else 'test')
         ax.legend()
-        plt.savefig(f"{'train' if train else 'test'}_plot_cnt_4.png", format='png', dpi=300)
+        plt.savefig(f"{'train' if train else 'test'}_plot_cnt.png", format='png', dpi=300)
         plt.close('all')
 
     def looper(self, load_model=False, model_path='lstm_model.pt', opim_path='optimizer.pt'):
