@@ -130,8 +130,10 @@ def get_num_shares(ticker, api_key='f09ef0f6985bef8f53ad5f0ed68dc30c'):
 
 
 def get_tickers(query, exchange='NASDAQ', limit=10, api_key='f09ef0f6985bef8f53ad5f0ed68dc30c'):
-    url = f'https://financialmodelingprep.com/api/v3/search-ticker?query={query}&limit={limit}&exchange={exchange}&apikey={api_key}'
-    response = requests.get(url)
+    response = requests.get(
+        "https://financialmodelingprep.com/api/v3/search-ticker?"
+        f"query={query}&limit={limit}&exchange={exchange}&apikey={api_key}"
+    )
     return response.json()
 
 
@@ -160,45 +162,41 @@ def get_all_tradeable_tickers(
     
     return tickers
 
-def get_price_data(ticker, api_key='f09ef0f6985bef8f53ad5f0ed68dc30c'):
-    url = f'https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}?apikey={api_key}'
-    response = requests.get(url)
-    price_data = pd.DataFrame()
-    
-    for line in response.json()['historical']:
-        price_data = price_data.append(line, ignore_index=True)
-    
-    price_data['timestamp'] = pd.to_datetime(price_data['date'], format="%Y-%m-%d").dt.date
+
+def get_price_data(ticker, api_key='f09ef0f6985bef8f53ad5f0ed68dc30c'): 
+    price_data = pd.DataFrame(requests.get(
+        f'https://financialmodelingprep.com/api/v3/historical-price-full/{ticker}?apikey={api_key}'
+    ))
+
+    price_data['timestamp'] = pd.to_datetime(
+        price_data['date'], 
+        format="%Y-%m-%d"
+    ).dt.date
+
     return price_data
 
 
 def get_minute_price_data(ticker,
                           start_readtime=None,
                           end_readtime=None,
-                          api_key='f09ef0f6985bef8f53ad5f0ed68dc30c'):
-    data = request(
-        f'https://financialmodelingprep.com/api/v3/historical-chart/1min/{ticker}?apikey={api_key}'
+                          api_key='f09ef0f6985bef8f53ad5f0ed68dc30c',
+                          five_min=False):
+    data = pd.DataFrame(request(
+        "https://financialmodelingprep.com/api/v3/historical-chart/"
+        f"{'5min' if five_min else '1min'}/{ticker}?apikey={api_key}"
+    ))
+
+    data['date'] = pd.to_datetime(
+        data['date'], format="%Y-%m-%d"
     )
-    
+    data = data.sort_values(by='date')
+
     if start_readtime:
-        mod_data = []
-        index = 1
-        
-        while(index):
-            minute_data = data[index-1]
-            index += 1
-            
-            quote_datetime = datetime.strptime(
-                minute_data['date'], "%Y-%m-%d %H:%M:%S"
-            ) 
-            
-            if quote_datetime <= end_readtime:
-                if quote_datetime >= start_readtime:
-                    mod_data.append(minute_data)
-                else:
-                    index = False
-        
-        data = mod_data
+        data = data[data['date'] >= start_readtime]
+
+    if end_readtime:
+        data = data[data['date'] <= end_readtime]
+    
     return data
 
     
