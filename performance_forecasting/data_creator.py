@@ -14,9 +14,19 @@ import numpy as np
 
 from helpers.linear_forecasts import get_statement_data, add_linear_forecast_params
 from helpers.api_requests import get_all_tickers_by_exchange
+from performance_forecasting.data_retriever import balance_sheet, cash_flow,\
+     income_statement, balance_sheet_growth, cash_flow_growth,\
+     income_statement_growth, company_profile
 
 
-def download_statement_data_for_exchanges(exchanges, period, min_statements, data_path):
+def download_statement_data_for_exchanges(
+        exchanges,
+        period,
+        min_statements,
+        data_path,
+        prefix='',
+        replace=False
+):
     """
         For given exchanges, downloads all tickers then all 
         statements (merge of cash flow & income) for those tickers
@@ -24,29 +34,57 @@ def download_statement_data_for_exchanges(exchanges, period, min_statements, dat
     tickers = []
     [tickers.extend(get_all_tickers_by_exchange(exchange=exchange)) for exchange in exchanges]
     tickers = list(set(tickers))
+    join_cols = ["symbol", "date"]
 
     print('Num tickers = ', len(tickers))
 
     for ticker in tickers:
         print(f"processing {ticker}, {tickers.index(ticker)} out of {len(tickers)}")
         try:
-            statements = get_statement_data(
-                    ticker,
-                    period,
-                    as_dataframe=True,
-                    merge_statements=True,
-                    min_statements=min_statements,
-            )
+            filename =  f"{data_path}{prefix}{ticker.replace('.', '_')}.csv"
+            
+            if replace or not os.path.isfile(filename):
 
-            if period == "yearly" and \
-                statements.astype({'date': str}).date.str.contains(
-                    statements.loc[2, 'date'].split('-')[0]
-                ).sum() > 1 : 
+                retrieval_functions = [
+                    balance_sheet, cash_flow, income_statement,
+                    balance_sheet_growth, cash_flow_growth,
+                    income_statement_growth
+                ]
 
-                print("Print statements not in correct format (yearly).")
+                data = retrieval_functions[0](ticker)
+
+                for retrieval_function in retrieval_functions[1:]:
+                    data = pd.merge(
+                        data,
+                        retrieval_function(ticker), 
+                        on=join_cols
+                    )
+                
+                profile = company_profile(ticker)[0]
+                for var_name in [
+                    "sector", "country", "fullTimeEmployees", 
+                    "currency", "exchange", "industry", "isEtf", 
+                    "isActivelyTrading", "isAdr", "isFund"
+                ]:
+                    data[var_name] = [profile[var_name]] * len(data)
+
+                if len(data) > min_statements:
+                    if period == "year" and \
+                        data.astype({'date': str}).date.str.contains(
+                            data.loc[2, 'date'].split('-')[0]
+                        ).sum() > 1 : 
+
+                        print("Print statements not in correct format (year).")
+
+                    else:
+                        print(f"Saving {filename}")
+                        data.to_csv(filename)
+
+                else:
+                    print(f'Not saving {ticker}, not enough data, only {len(data)} rows.')
 
             else:
-                statements.to_csv(f"{data_path}{ticker.replace('.', '_')}.csv")
+                print('File Exists already')
 
         except Exception as e:
             print(e)
@@ -120,6 +158,7 @@ def save_sequences_to_disk(
     """
         Iterates through statements & creates multiple sequences from each tickers statements
     """
+    print(f"{data_path}{pkl_path}_test.pkl")
     train, test = [], []
     paths = os.listdir(data_path)
     num_tickers = len(paths)
