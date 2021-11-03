@@ -114,14 +114,15 @@ def add_linear_forecast_params(
 def get_price_data_between_date_range(
         ticker,
         start_date,
-        forecast_date,
-        end_date,
+        forecast_date=None,
+        end_date='2021-12-31',
         price_data=None
     ):
     """
         Gets stock price data (e.g open, close) from between the specified date range.
     """
     start_date = to_date(start_date)
+    end_date = to_date(end_date)
     
     if price_data is None:
         price_data = get_price_data(ticker)
@@ -129,8 +130,12 @@ def get_price_data_between_date_range(
             (price_data['high']-price_data['low'])/2
         )
 
-    if forecast_date not in price_data['timestamp'].values:
-        raise Exception('forecast date {} not in price data for {}, the company may be delisted'.format(forecast_date, ticker))
+    if forecast_date and (forecast_date not in price_data['timestamp'].values):
+        raise Exception(
+            'forecast date {} not in price data for {}, the company may be delisted'.format(
+                forecast_date, ticker
+            )
+        )
 
     price_data_range = price_data[price_data['timestamp'] >= start_date]    
     price_data_range = price_data_range[price_data_range['timestamp'] <= end_date]
@@ -305,8 +310,8 @@ def get_statement_data(
     """
         Gets income & cash flow statement data for given ticker
     """
-    if period not in ['quarterly', 'yearly']:
-        raise ValueError("period needs to be quarterly or yearly...")
+    if period not in ['quarter', 'year']:
+        raise ValueError("period needs to be quarter or year...")
     
     income_statements = get_statement_json(ticker, period=period)
     
