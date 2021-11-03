@@ -46,6 +46,8 @@ class Trainer:
         sequence_pkl_path, 
         variables_to_forecast,
         selected_variables,
+        layer_sizes,
+        weight_decays,
         lr=0.0001,
         batch_size=32,
         optim='adam_grad',
@@ -56,24 +58,40 @@ class Trainer:
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.output_indexes = [selected_variables.index(var) for var in variables_to_forecast]
-
         self.num_features = len(selected_variables)
-
-        layer_sizes = {
-            'lstm_hidden_size': int(self.num_features*2*1.5),
-            'fc_hidden_size': 5,
-            'num_stacked_lstm_cells': 4
-        }
 
         self.lstm = revenueForecastLSTM(
             self.num_features, 
             len(variables_to_forecast), 
             layer_sizes,
             use_bn=use_bn,
-            use_rnn=use_rnn
+            use_rnn=use_rnn,
+            dropout=weight_decays['lstm_dropout']
         ).to(self.device)
 
-        self.optimizer = OPTIMIZERS[optim](self.lstm.parameters(), lr=lr)
+        global_params, fc_params = [], []
+
+        for mod_name, module in self.lstm.named_modules():
+            if mod_name == '':
+                pass
+
+            elif mod_name == 'lstm':
+                global_params.extend(module.parameters())
+
+            else:
+                for param in module.parameters():
+                    if len(param.shape) == 1:
+                        global_params.append(param)
+                    else:
+                        fc_params.append(param)
+
+        self.optimizer = OPTIMIZERS[optim](
+            [
+                {'params': global_params, 'weight_decay': weight_decays['global_l2']},
+                {'params': fc_params, 'weight_decay': weight_decays['fc_l2']}
+            ], lr=lr,
+        )
+        #self.lstm.parameters()
         self.loss_function = LOSS_FUNCTIONS[loss_function]
 
         self.train = []
@@ -185,7 +203,7 @@ class Trainer:
                 input_sequences.to(self.device),
                 self.init_h0, 
                 self.init_c0,
-                activation=self.activation
+                activations=self.activation
             )
 
             loss_fc = self.loss_function(
@@ -199,7 +217,7 @@ class Trainer:
             )
 
             if train:
-                loss = loss_fc + loss_seq # +
+                loss = loss_fc + loss_seq
                 loss.backward()
                 self.optimizer.step() 
 
@@ -219,11 +237,11 @@ class Trainer:
             fig.clear(True) 
         else:
             fig = plt.figure(figsize=(25,10), clear=True)
-
+        
         ax = fig.add_axes([0.1, 0.1, 0.5, 0.5])
-        ax.plot(range(len(losses)), losses, label="train")
+        ax.plot(range(len(losses)), losses, label='train' if train else 'test')
         ax.legend()
-        plt.savefig(f"{'train' if train else 'test'}_plot_cnt_4.png", format='png', dpi=300)
+        plt.savefig(f"{'train' if train else 'test'}_plot_cnt.png", format='png', dpi=300)
         plt.close('all')
 
     def looper(self, load_model=False, model_path='lstm_model.pt', opim_path='optimizer.pt'):
@@ -235,8 +253,12 @@ class Trainer:
             
         for i in range(3000):
             print(f"Epoch {i}::")
-            train_losses.append(self.perform_epoch())
-            test_losses.append(self.perform_epoch(train=False))
+            train_loss = self.perform_epoch()
+            test_loss = self.perform_epoch(train=False)
+
+            if i > 2:
+                train_losses.append(train_loss)
+                test_losses.append(test_loss)
 
             if i % 20 == 0 and i != 0:
                 # in order to modify the size
